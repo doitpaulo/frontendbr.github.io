@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Controle de Estoque</title>
+  <script src="https://unpkg.com/react@17/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/xlsx/dist/xlsx.full.min.js"></script>
+  <script src="https://unpkg.com/recharts/umd/Recharts.min.js"></script>
+  <script src="https://unpkg.com/react-router-dom@6/dist/react-router-dom.development.js"></script>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    const { Card, CardContent, Button, Table, TableHead, TableRow, TableCell, TableBody } = window.ReactUI;
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } = Recharts;
+    const { BrowserRouter, Routes, Route, Link, useNavigate } = ReactRouterDOM;
+
+    const InventoryApp = () => {
+      const [inventory, setInventory] = useState([]);
+      const [transactions, setTransactions] = useState([]);
+      const [loggedIn, setLoggedIn] = useState(false);
+      const [username, setUsername] = useState("");
+      const [password, setPassword] = useState("");
+      const [role, setRole] = useState("");
+      const [users, setUsers] = useState([{ username: "admin", password: "1234", role: "admin" }]);
+
+      useEffect(() => {
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.register("/service-worker.js");
+        }
+      }, []);
+
+      const handleLogin = () => {
+        const user = users.find((u) => u.username === username && u.password === password);
+        if (user) {
+          setLoggedIn(true);
+          setRole(user.role);
+        } else {
+          alert("Usuário ou senha incorretos");
+        }
+      };
+
+      const handleAddUser = (newUsername, newPassword) => {
+        setUsers([...users, { username: newUsername, password: newPassword, role: "user" }]);
+        alert("Usuário criado com sucesso!");
+      };
+
+      const handleTransaction = (item, quantity, type) => {
+        const updatedInventory = [...inventory];
+        const existingItem = updatedInventory.find((i) => i.name === item);
+
+        if (existingItem) {
+          existingItem.quantity += type === "entrada" ? quantity : -quantity;
+        } else {
+          updatedInventory.push({ name: item, quantity: type === "entrada" ? quantity : -quantity });
+        }
+
+        setInventory(updatedInventory);
+        setTransactions([...transactions, { item, quantity, type, date: new Date().toLocaleDateString() }]);
+      };
+
+      const generateReport = () => {
+        const ws = XLSX.utils.json_to_sheet(transactions);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Transações");
+        XLSX.writeFile(wb, "relatorio_estoque.xlsx");
+      };
+
+      const dailySummary = transactions.reduce((acc, curr) => {
+        acc[curr.date] = (acc[curr.date] || 0) + (curr.type === "saida" ? curr.quantity : 0);
+        return acc;
+      }, {});
+
+      const chartData = Object.keys(dailySummary).map((date) => ({ date, totalSaida: dailySummary[date] }));
+
+      if (!loggedIn) {
+        return (
+          <div className="p-6 max-w-md mx-auto text-center bg-green-100">
+            <img src="/mnt/data/image.png" alt="Logo" className="mx-auto mb-4 w-40" />
+            <h2 className="text-2xl font-bold mb-4 text-green-900">Login</h2>
+            <input type="text" placeholder="Usuário" className="mb-2 p-2 border" value={username} onChange={(e) => setUsername(e.target.value)} />
+            <input type="password" placeholder="Senha" className="mb-2 p-2 border" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Button className="bg-green-700 text-white" onClick={handleLogin}>Entrar</Button>
+          </div>
+        );
+      }
+
+      return (
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<HomePage role={role} generateReport={generateReport} />} />
+            <Route path="/entrada" element={<EntradaEstoque handleTransaction={handleTransaction} />} />
+            <Route path="/saida" element={<SaidaEstoque handleTransaction={handleTransaction} />} />
+            <Route path="/gerenciar-usuarios" element={<GerenciarUsuarios users={users} handleAddUser={handleAddUser} />} />
+          </Routes>
+        </BrowserRouter>
+      );
+    };
+
+    const HomePage = ({ role, generateReport }) => {
+      return (
+        <div className="p-6 max-w-4xl mx-auto bg-green-50 text-green-900">
+          <img src="/mnt/data/image.png" alt="Logo" className="mx-auto mb-4 w-40" />
+          <h1 className="text-2xl font-bold mb-4 text-center">Controle de Estoque</h1>
+          <div className="flex flex-col space-y-4">
+            <Link to="/entrada"><Button className="bg-green-700 text-white w-full">Entrada no Estoque</Button></Link>
+            <Link to="/saida"><Button className="bg-green-700 text-white w-full">Saída do Estoque</Button></Link>
+            {role === "admin" && <Link to="/gerenciar-usuarios"><Button className="bg-green-700 text-white w-full">Gerenciar Usuários</Button></Link>}
+            <Button className="bg-green-700 text-white w-full" onClick={generateReport}>Exportar para Excel</Button>
+          </div>
+        </div>
+      );
+    };
+
+    const EntradaEstoque = ({ handleTransaction }) => {
+      const [codigo, setCodigo] = useState("");
+      const [nome, setNome] = useState("");
+      const [quantidade, setQuantidade] = useState("");
+      const [lote, setLote] = useState("");
+      const navigate = useNavigate();
+
+      const handleSubmit = () => {
+        handleTransaction(nome, parseInt(quantidade), "entrada");
+        alert("Entrada registrada com sucesso!");
+        navigate("/");
+      };
+
+      return (
+        <div className="p-6 max-w-md mx-auto bg-green-50 text-green-900">
+          <h2 className="text-xl font-bold mb-4">Entrada no Estoque</h2>
+          <input type="text" placeholder="Código do Produto" className="mb-2 p-2 border w-full" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
+          <input type="text" placeholder="Nome do Produto" className="mb-2 p-2 border w-full" value={nome} onChange={(e) => setNome(e.target.value)} />
+          <input type="number" placeholder="Quantidade" className="mb-2 p-2 border w-full" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
+          <input type="text" placeholder="Lote" className="mb-2 p-2 border w-full" value={lote} onChange={(e) => setLote(e.target.value)} />
+          <Button className="bg-green-700 text-white w-full mb-2" onClick={handleSubmit}>Lançar</Button>
+          <Link to="/"><Button className="bg-green-700 text-white w-full">Voltar para o Início</Button></Link>
+        </div>
+      );
+    };
+
+    const SaidaEstoque = ({ handleTransaction }) => {
+      const [codigo, setCodigo] = useState("");
+      const [nome, setNome] = useState("");
+      const [quantidade, setQuantidade] = useState("");
+      const navigate = useNavigate();
+
+      const handleSubmit = () => {
+        handleTransaction(nome, parseInt(quantidade), "saida");
+        alert("Saída registrada com sucesso!");
+        navigate("/");
+      };
+
+      return (
+        <div className="p-6 max-w-md mx-auto bg-green-50 text-green-900">
+          <h2 className="text-xl font-bold mb-4">Saída do Estoque</h2>
+          <input type="text" placeholder="Código do Produto" className="mb-2 p-2 border w-full" value={codigo} onChange={(e) => setCodigo(e.target.value)} />
+          <input type="text" placeholder="Nome do Produto" className="mb-2 p-2 border w-full" value={nome} onChange={(e) => setNome(e.target.value)} />
+          <input type="number" placeholder="Quantidade" className="mb-2 p-2 border w-full" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} />
+          <Button className="bg-green-700 text-white w-full mb-2" onClick={handleSubmit}>Lançar</Button>
+          <Link to="/"><Button className="bg-green-700 text-white w-full">Voltar para o Início</Button></Link>
+        </div>
+      );
+    };
+
+    const GerenciarUsuarios = ({ users, handleAddUser }) => {
+      const [newUsername, setNewUsername] = useState("");
+      const [newPassword, setNewPassword] = useState("");
+      const navigate = useNavigate();
+
+      const handleSubmit = () => {
+        handleAddUser(newUsername, newPassword);
+        setNewUsername("");
+        setNewPassword("");
+      };
+
+      return (
+        <div className="p-6 max-w-md mx-auto bg-green-50 text-green-900">
+          <h2 className="text-xl font-bold mb-4">Gerenciar Usuários</h2>
+          <input type="text" placeholder="Novo Usuário" className="mb-2 p-2 border w-full" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} />
+          <input type="password" placeholder="Senha" className="mb-2 p-2 border w-full" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+          <Button className="bg-green-700 text-white w-full mb-2" onClick={handleSubmit}>Adicionar Usuário</Button>
+          <div className="mt-4">
+            <h3 className="text-lg font-semibold">Usuários Existentes</h3>
+            <ul>
+              {users.map((user, index) => (
+                <li key={index}>{user.username} - {user.role}</li>
+              ))}
+            </ul>
+          </div>
+          <Link to="/"><Button className="bg-green-700 text-white w-full mt-4">Voltar para o Início</Button></Link>
+        </div>
+      );
+    };
+
+    ReactDOM.render(<InventoryApp />, document.getElementById('root'));
+  </script>
+</body>
+</html>
